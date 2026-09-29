@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RescuAI — Emergency Response Command Center</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet.js CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <!-- Leaflet.js JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqnA=" crossorigin=""></script>
+
+  <!-- FontAwesome 6 CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <script>
+    /* ── Tailwind extended theme configuration ── */
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              950: '#0F172A',
+              900: '#0F172A',
+              800: '#1E293B',
+              700: '#334155',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* ── Base reset & scrollbar ── */
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #0F172A; color: #E2E8F0; font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0F172A; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* ── Glassmorphism card ── */
+    .glass-card {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 12px;
+    }
+
+    /* ── Glow borders ── */
+    .glow-red   { box-shadow: 0 0 18px rgba(220, 38, 38, 0.25); }
+    .glow-blue  { box-shadow: 0 0 18px rgba(56, 189, 248, 0.2); }
+    .glow-amber { box-shadow: 0 0 18px rgba(245, 158, 11, 0.2); }
+    .glow-green { box-shadow: 0 0 18px rgba(34, 197, 94, 0.15); }
+
+    /* ── Pulsing dot animations ── */
+    @keyframes pulseRed   { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.6)}  50%{box-shadow:0 0 0 8px rgba(220,38,38,0)} }
+    @keyframes pulseAmber { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.6)} 50%{box-shadow:0 0 0 8px rgba(245,158,11,0)} }
+    @keyframes pulseGreen { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}  50%{box-shadow:0 0 0 8px rgba(34,197,94,0)} }
+    .pulse-red   { animation: pulseRed   1.5s infinite; }
+    .pulse-amber { animation: pulseAmber 1.8s infinite; }
+    .pulse-green { animation: pulseGreen 2s   infinite; }
+
+    /* ── Leaflet dark tiles & popup ── */
+    .leaflet-container { background: #0F172A !important; border-radius: 10px; }
+    .leaflet-popup-content-wrapper { background: #1E293B; border: 1px solid #334155; color: #E2E8F0; border-radius: 8px; }
+    .leaflet-popup-tip { background: #1E293B; }
+    .leaflet-popup-content { margin: 10px 14px; font-size: 13px; line-height: 1.5; }
+    .leaflet-control-zoom a { background: #1E293B !important; color: #94A3B8 !important; border: 1px solid #334155 !important; }
+
+    /* ── Incident feed item fade-in ── */
+    @keyframes feedIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+    .feed-item { animation: feedIn .35s ease; }
+
+    /* ── Form range slider ── */
+    input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: #334155; border-radius: 3px; outline: none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #DC2626; cursor: pointer; }
+
+    /* ── Status badges ── */
+    .badge-deployed { background:#16213E; color:#38BDF8; border:1px solid #0369A1; }
+    .badge-enroute  { background:#261A12; color:#F59E0B; border:1px solid #92400E; }
+    .badge-standby  { background:#162310; color:#22C55E; border:1px solid #166534; }
+    .badge-critical { background:#2D0A0A; color:#DC2626; border:1px solid #7F1D1D; }
+
+    /* ── Pulsing circle SVG marker ── */
+    @keyframes ripple { 0%{r:12;opacity:.8} 100%{r:22;opacity:0} }
+    .leaflet-pane svg circle.ripple { animation: ripple 1.4s ease-out infinite; }
+
+    /* ── Responsive map height ── */
+    #disaster-map { height: 420px; width: 100%; }
+    @media(max-width:640px){ #disaster-map { height: 280px; } }
+
+    /* ── Navigation glow line ── */
+    .nav-glow { border-bottom: 1px solid rgba(220,38,38,0.3); }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-950">
+
+<!-- ════════════════════════════════════════════════
+     (1) TOP NAVIGATION HEADER
+     ════════════════════════════════════════════════ -->
+<nav class="sticky top-0 z-50 glass-card nav-glow px-4 sm:px-6 py-3 flex items-center justify-between">
+  <!-- Brand -->
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-lg bg-red-700 flex items-center justify-center glow-red">
+      <i class="fa-solid fa-shield-halved text-white text-base"></i>
+    </div>
+    <div>
+      <span class="text-white font-extrabold text-xl tracking-tight">Rescu<span class="text-red-500">AI</span></span>
+      <p class="text-slate-500 text-[10px] leading-none tracking-widest uppercase">Command Center</p>
+    </div>
+  </div>
+
+  <!-- Center status badge -->
+  <div class="hidden sm:flex items-center gap-2 bg-red-950/60 border border-red-700/40 rounded-full px-3 py-1.5">
+    <span class="w-2 h-2 rounded-full bg-red-500 pulse-red inline-block"></span>
+    <span class="text-red-400 text-xs font-semibold tracking-widest uppercase">SYSTEM ONLINE — REALTIME STREAM</span>
+  </div>
+
+  <!-- Clock & mode indicator -->
+  <div class="flex items-center gap-3">
+    <div class="text-right">
+      <p id="clock-utc" class="text-sky-400 font-mono text-xs font-bold"></p>
+      <p id="clock-wib" class="text-slate-400 font-mono text-[10px]"></p>
+    </div>
+    <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center" title="Dark Mode Active">
+      <i class="fa-solid fa-moon text-sky-400 text-sm"></i>
+    </div>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════════════════
+     MAIN LAYOUT CONTAINER
+     ════════════════════════════════════════════════ -->
+<main class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+
+  <!-- ── (8) ADMIN CONTROL TOOLBAR ── -->
+  <div class="glass-card p-3 flex flex-wrap items-center gap-2">
+    <span class="text-slate-400 text-xs font-semibold uppercase tracking-widest mr-2">
+      <i class="fa-solid fa-sliders mr-1"></i>Admin Controls
+    </span>
+    <!-- Filter severity -->
+    <select id="filter-severity" onchange="filterBySeverity(this.value)"
+      class="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-sky-500 cursor-pointer">
+      <option value="all">All Severities</option>
+      <option value="critical">Critical Only</option>
+      <option value="high">High Only</option>
+      <option value="moderate">Moderate Only</option>
+    </select>
+    <!-- Evacuation alert -->
+    <button onclick="triggerEvacuationAlert()"
+      class="flex items-center gap-2 bg-red-700 hover:bg-red-600 text-white text-xs font-semibold rounded-lg px-3 py-1.5 transition-colors">
+      <i class="fa-solid fa-triangle-exclamation"></i> Trigger Evacuation Alert
+    </button>
+    <!-- Export CSV -->
+    <button onclick="exportCSV()"
+      class="flex items-center gap-2 bg-sky-700 hover:bg-sky-600 text-white text-xs font-semibold rounded-lg px-3 py-1.5 transition-colors">
+      <i class="fa-solid fa-file-csv"></i> Export Incident Data (CSV)
+    </button>
+    <!-- Live incident count -->
+    <div class="ml-auto flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-green-400 pulse-green"></span>
+      <span id="incident-live-count" class="text-green-400 font-mono text-xs font-bold">0 Active Incidents</span>
+    </div>
+  </div>
+
+  <!-- ── (2) KPI CARDS ── -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+    <!-- Total Reports -->
+    <div class="glass-card glow-blue p-4 space-y-2">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-slate-400 text-xs uppercase tracking-widest">Total Reports</p>
+          <p id="kpi-total" class="text-sky-400 text-3xl font-extrabold font-mono mt-1">247</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-sky-900/40 border border-sky-700/30 flex items-center justify-center">
+          <i class="fa-solid fa-clipboard-list text-sky-400 text-base"></i>
+        </div>
+      </div>
+      <div class="flex items-center gap-1">
+        <i class="fa-solid fa-arrow-trend-up text-green-400 text-xs"></i>
+        <span class="text-green-400 text-xs font-semibold">+12%</span>
+        <span class="text-slate-500 text-xs">vs. last 24h</span>
+      </div>
+    </div>
+
+    <!-- Verified Critical Cases -->
+    <div class="glass-card glow-red p-4 space-y-2">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-slate-400 text-xs uppercase tracking-widest">Critical Cases</p>
+          <p id="kpi-critical" class="text-red-500 text-3xl font-extrabold font-mono mt-1">38</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-red-900/40 border border-red-700/30 flex items-center justify-center relative">
+          <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full pulse-red"></span>
+          <i class="fa-solid fa-triangle-exclamation text-red-500 text-base"></i>
+        </div>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge-critical text-[10px] font-bold px-2 py-0.5 rounded-full">VERIFIED</span>
+        <span class="text-slate-500 text-xs ml-1">Awaiting dispatch</span>
+      </div>
+    </div>
+
+    <!-- Active SAR Teams -->
+    <div class="glass-card glow-amber p-4 space-y-2">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-slate-400 text-xs uppercase tracking-widest">SAR Teams Active</p>
+          <p id="kpi-sar" class="text-amber-400 text-3xl font-extrabold font-mono mt-1">14</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-amber-900/40 border border-amber-700/30 flex items-center justify-center">
+          <i class="fa-solid fa-people-group text-amber-400 text-base"></i>
+        </div>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 bg-amber-400 rounded-full pulse-amber"></span>
+        <span class="text-amber-400 text-xs font-semibold">Deployed in field</span>
+      </div>
+    </div>
+
+    <!-- Pending Logistics -->
+    <div class="glass-card glow-green p-4 space-y-2">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-slate-400 text-xs uppercase tracking-widest">Pending Logistics</p>
+          <p id="kpi-logistics" class="text-green-400 text-3xl font-extrabold font-mono mt-1">91</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-green-900/40 border border-green-700/30 flex items-center justify-center">
+          <i class="fa-solid fa-boxes-stacked text-green-400 text-base"></i>
+        </div>
+      </div>
+      <div class="flex items-center gap-1">
+        <i class="fa-solid fa-clock text-slate-400 text-xs"></i>
+        <span class="text-slate-400 text-xs">Requests queued</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MIDDLE ROW: Map + Report Form ── -->
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+
+    <!-- ── (4) GIS DISASTER MAP ── -->
+    <div class="lg:col-span-3 glass-card p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-map-location-dot text-sky-400"></i>
+          <h2 class="text-white font-bold text-sm tracking-wide uppercase">Live GIS Disaster Map</h2>
+        </div>
+        <div class="flex items-center gap-3 text-[10px] font-semibold">
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-600 inline-block"></span> Critical</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> High</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span> Moderate</span>
+        </div>
+      </div>
+      <div id="disaster-map" class="rounded-xl overflow-hidden border border-slate-700/50"></div>
+    </div>
+
+    <!-- ── (3) EMERGENCY REPORT FORM ── -->
+    <div class="lg:col-span-2 glass-card p-4 space-y-4">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-file-circle-exclamation text-red-500"></i>
+        <h2 class="text-white font-bold text-sm tracking-wide uppercase">Submit Emergency Report</h2>
+      </div>
+      <form id="report-form" onsubmit="submitReport(event)" class="space-y-3">
+
+        <!-- Reporter name -->
+        <div>
+          <label class="text-slate-400 text-xs mb-1 block">Reporter Name</label>
+          <input type="text" id="f-name" required placeholder="Nama pelapor..."
+            class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-sky-500 placeholder-slate-600" />
+        </div>
+
+        <!-- Phone -->
+        <div>
+          <label class="text-slate-400 text-xs mb-1 block">Phone Number</label>
+          <input type="tel" id="f-phone" placeholder="+62 xxx-xxxx-xxxx"
+            class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-sky-500 placeholder-slate-600" />
+        </div>
+
+        <!-- Location dropdown -->
+        <div>
+          <label class="text-slate-400 text-xs mb-1 block">Incident Location (City / Province)</label>
+          <select id="f-location"
+            class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-sky-500 cursor-pointer">
+            <option value="">-- Pilih Lokasi --</option>
+            <option>Jakarta Utara, DKI Jakarta</option>
+            <option>Bandung, Jawa Barat</option>
+            <option>Semarang, Jawa Tengah</option>
+            <option>Surabaya, Jawa Timur</option>
+            <option>Medan, Sumatera Utara</option>
+            <option>Makassar, Sulawesi Selatan</option>
+            <option>Jayapura, Papua</option>
+            <option>Mataram, Nusa Tenggara Barat</option>
+            <option>Palu, Sulawesi Tengah</option>
+            <option>Yogyakarta, DIY</option>
+          </select>
+        </div>
+
+        <!-- Disaster type -->
+        <div>
+          <label class="text-slate-400 text-xs mb-1 block">Disaster Type</label>
+          <select id="f-type"
+            class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-sky-500 cursor-pointer">
+            <option value="">-- Jenis Bencana --</option>
+            <option>Banjir</option>
+            <option>Gempa Bumi</option>
+            <option>Tanah Longsor</option>
+            <option>Puting Beliung</option>
+            <option>Kebakaran Hutan</option>
+          </select>
+        </div>
+
+        <!-- Urgency slider -->
+        <div>
+          <label class="text-slate-400 text-xs mb-1 flex justify-between">
+            Urgency Priority
+            <span id="slider-val" class="text-red-400 font-bold font-mono">50</span>
+          </label>
+          <input type="range" id="f-urgency" min="1" max="100" value="50"
+            oninput="document.getElementById('slider-val').textContent=this.value" />
+          <div class="flex justify-between text-[10px] text-slate-600 mt-0.5">
+            <span>Low (1)</span><span>Critical (100)</span>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label class="text-slate-400 text-xs mb-1 block">Situation Description</label>
+          <textarea id="f-desc" rows="3" placeholder="Deskripsikan situasi darurat..."
+            class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-sky-500 placeholder-slate-600 resize-none"></textarea>
+        </div>
+
+        <button type="submit"
+          class="w-full bg-red-700 hover:bg-red-600 text-white font-bold text-sm rounded-lg py-2.5 transition-colors flex items-center justify-center gap-2">
+          <i class="fa-solid fa-paper-plane"></i> Submit Emergency Report
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── BOTTOM ROW: AI Panel + Incident Feed ── -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+    <!-- ── (5) AI CRISIS INTELLIGENCE PANEL ── -->
+    <div class="glass-card p-4 space-y-4">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-microchip text-violet-400"></i>
+        <h2 class="text-white font-bold text-sm tracking-wide uppercase">AI Crisis Intelligence</h2>
+        <span class="ml-auto text-[10px] bg-violet-900/50 border border-violet-700/40 text-violet-300 rounded-full px-2 py-0.5">Powered by RescuAI Engine</span>
+      </div>
+
+      <!-- Score display -->
+      <div class="flex gap-4">
+        <div class="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl p-3 text-center">
+          <p class="text-slate-500 text-[10px] uppercase tracking-widest mb-1">Urgency Score</p>
+          <p id="ai-score" class="text-5xl font-extrabold font-mono text-red-500">--</p>
+          <p class="text-slate-600 text-[10px] mt-1">/ 100</p>
+        </div>
+        <div class="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl p-3">
+          <p class="text-slate-500 text-[10px] uppercase tracking-widest mb-2">Risk Category</p>
+          <p id="ai-category" class="text-lg font-bold text-amber-400">Awaiting Input</p>
+          <p id="ai-summary" class="text-slate-400 text-xs mt-2 leading-relaxed">Submit a report to trigger AI analysis.</p>
+        </div>
+      </div>
+
+      <!-- Logistics tags -->
+      <div>
+        <p class="text-slate-500 text-[10px] uppercase tracking-widest mb-2">Recommended Logistics</p>
+        <div id="ai-tags" class="flex flex-wrap gap-2">
+          <span class="text-slate-600 text-xs italic">No active analysis</span>
+        </div>
+      </div>
+
+      <!-- Keyword detection -->
+      <div>
+        <p class="text-slate-500 text-[10px] uppercase tracking-widest mb-2">Detected Keywords</p>
+        <div id="ai-keywords" class="flex flex-wrap gap-1.5">
+          <span class="text-slate-600 text-xs italic">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── (6) REAL-TIME EMERGENCY INCIDENT FEED ── -->
+    <div class="glass-card p-4 flex flex-col space-y-3">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-rss text-sky-400"></i>
+        <h2 class="text-white font-bold text-sm tracking-wide uppercase">Live Incident Feed</h2>
+        <span class="w-2 h-2 bg-green-400 rounded-full pulse-green ml-1"></span>
+        <span class="ml-auto text-slate-500 text-xs" id="feed-count">0 events</span>
+      </div>
+      <div id="incident-feed" class="flex-1 overflow-y-auto max-h-72 space-y-2 pr-1">
+        <!-- Feed items injected by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── (7) RESCUE TEAM DEPLOYMENT TABLE ── -->
+  <div class="glass-card p-4 space-y-3">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-helicopter-symbol text-amber-400"></i>
+      <h2 class="text-white font-bold text-sm tracking-wide uppercase">Rescue Team Deployment Board</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-slate-500 text-[11px] uppercase tracking-widest border-b border-slate-700">
+            <th class="text-left py-2 pr-4 font-semibold">Team Name</th>
+            <th class="text-left py-2 pr-4 font-semibold">Assigned Location</th>
+            <th class="text-left py-2 pr-4 font-semibold">Disaster Type</th>
+            <th class="text-left py-2 pr-4 font-semibold">Personnel</th>
+            <th class="text-left py-2 pr-4 font-semibold">Status</th>
+            <th class="text-left py-2 font-semibold">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="team-table-body">
+          <!-- Rows injected by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="text-center py-4 border-t border-slate-800 text-slate-600 text-xs">
+    RescuAI &copy; 2025 — IBM AI Builders Challenge · Disaster Relief &amp; Climate Tech Track ·
+    <span class="text-sky-600">Emergency Intelligence Platform</span>
+  </footer>
+</main>
+
+<!-- ════════════════════════════════════════════════
+     EVACUATION ALERT MODAL
+     ════════════════════════════════════════════════ -->
+<div id="evacuation-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="glass-card glow-red max-w-sm w-full mx-4 p-6 space-y-4 text-center">
+    <div class="w-16 h-16 rounded-full bg-red-700/30 border-2 border-red-600 flex items-center justify-center mx-auto pulse-red">
+      <i class="fa-solid fa-siren-on text-red-500 text-2xl"></i>
+    </div>
+    <h3 class="text-red-400 font-extrabold text-xl uppercase tracking-widest">⚠ EVACUATION ALERT</h3>
+    <p class="text-slate-300 text-sm">All field units have been notified. Emergency broadcast transmitted to all registered zones. Command center is now in <span class="text-red-400 font-bold">FULL EMERGENCY MODE</span>.</p>
+    <button onclick="document.getElementById('evacuation-modal').classList.replace('flex','hidden');document.getElementById('evacuation-modal').classList.add('hidden')"
+      class="w-full bg-red-700 hover:bg-red-600 text-white font-bold rounded-lg py-2.5 transition-colors">
+      Acknowledge &amp; Dismiss
+    </button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     JAVASCRIPT — APPLICATION LOGIC
+     ════════════════════════════════════════════════ -->
+<script>
+/* ══════════════════════════════════════════════════
+   SECTION 1 — LIVE CLOCK
+   ══════════════════════════════════════════════════ */
+function updateClock() {
+  const now = new Date();
+  const utcStr = now.toUTCString().replace('GMT', 'UTC');
+  // WIB = UTC+7
+  const wib = new Date(now.getTime() + 7 * 3600 * 1000);
+  const wibStr = wib.toISOString().replace('T', ' ').substring(0, 19) + ' WIB';
+  document.getElementById('clock-utc').textContent = now.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false }) + ' UTC';
+  document.getElementById('clock-wib').textContent = wib.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false }) + ' WIB';
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 2 — DATA STORE (Simulated Incidents)
+   ══════════════════════════════════════════════════ */
+const incidentDB = [
+  { id: 1, type: 'Banjir',          loc: 'Jakarta Utara, DKI Jakarta',      lat: -6.1382, lng: 106.8560, severity: 'critical', urgency: 95, desc: 'Banjir setinggi 2m, 40 warga terjebak termasuk balita dan lansia.',        time: '08:14' },
+  { id: 2, type: 'Gempa Bumi',       loc: 'Palu, Sulawesi Tengah',            lat: -0.8917, lng: 119.8707, severity: 'critical', urgency: 88, desc: 'Gempa M6.2, bangunan runtuh, korban darah, perlu tim medis segera.',         time: '08:22' },
+  { id: 3, type: 'Tanah Longsor',    loc: 'Bandung, Jawa Barat',              lat: -6.9175, lng: 107.6191, severity: 'high',     urgency: 72, desc: 'Tanah longsor menutup akses jalan. 5 rumah tertimbun.',                      time: '08:35' },
+  { id: 4, type: 'Puting Beliung',   loc: 'Semarang, Jawa Tengah',            lat: -6.9667, lng: 110.4167, severity: 'high',     urgency: 67, desc: 'Angin puting beliung merusak 30 rumah. Butuh tenda darurat.',                time: '09:01' },
+  { id: 5, type: 'Banjir',          loc: 'Mataram, Nusa Tenggara Barat',     lat: -8.5833, lng: 116.1167, severity: 'moderate', urgency: 48, desc: 'Genangan 50cm di permukiman. Warga butuh makanan bayi dan air bersih.',      time: '09:18' },
+  { id: 6, type: 'Kebakaran Hutan', loc: 'Jayapura, Papua',                  lat: -2.5333, lng: 140.7167, severity: 'high',     urgency: 74, desc: 'Kebakaran hutan meluas 200ha. Asap tebal, warga kesulitan bernafas.',        time: '09:45' },
+  { id: 7, type: 'Gempa Bumi',      loc: 'Yogyakarta, DIY',                  lat: -7.7956, lng: 110.3695, severity: 'moderate', urgency: 45, desc: 'Gempa M4.5 terasa kuat. Beberapa bangunan retak. Pantau situasi.',           time: '10:02' },
+  { id: 8, type: 'Banjir',          loc: 'Makassar, Sulawesi Selatan',        lat: -5.1477, lng: 119.4327, severity: 'critical', urgency: 91, desc: 'Banjir bandang, 3 warga tenggelam. Tim SAR butuh perahu karet segera.',     time: '10:20' },
+];
+
+/* Severity colour map */
+const SEVERITY_COLOR = { critical: '#DC2626', high: '#F59E0B', moderate: '#3B82F6' };
+const SEVERITY_LABEL = { critical: 'Critical', high: 'High', moderate: 'Moderate' };
+
+/* Active filter state */
+let currentFilter = 'all';
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 3 — LEAFLET MAP INITIALISATION
+   ══════════════════════════════════════════════════ */
+const map = L.map('disaster-map', {
+  center: [-2.5489, 118.0149],
+  zoom: 5,
+  zoomControl: true,
+  attributionControl: false
+});
+
+/* Dark-styled OpenStreetMap tiles */
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 18,
+  subdomains: 'abcd'
+}).addTo(map);
+
+/* Custom pulsing circle marker factory */
+function makePulseIcon(color) {
+  const html = `
+    <div style="position:relative;width:32px;height:32px;">
+      <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="position:absolute;top:0;left:0;overflow:visible;">
+        <circle cx="16" cy="16" r="10" fill="${color}" opacity="0.85"/>
+        <circle class="ripple" cx="16" cy="16" r="12" fill="none" stroke="${color}" stroke-width="2" opacity="0.7"/>
+      </svg>
+    </div>`;
+  return L.divIcon({ html, className: '', iconSize: [32, 32], iconAnchor: [16, 16], popupAnchor: [0, -16] });
+}
+
+/* Marker layer group for easy filter/toggle */
+const markerGroup = L.layerGroup().addTo(map);
+
+/* Build markers from incident DB */
+function renderMapMarkers(filter) {
+  markerGroup.clearLayers();
+  incidentDB.forEach(inc => {
+    if (filter !== 'all' && inc.severity !== filter) return;
+    const marker = L.marker([inc.lat, inc.lng], { icon: makePulseIcon(SEVERITY_COLOR[inc.severity]) });
+    const badgeClass = inc.severity === 'critical' ? 'badge-critical' : inc.severity === 'high' ? 'badge-enroute' : 'badge-deployed';
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <p style="font-weight:800;font-size:14px;color:#F1F5F9;margin-bottom:4px;">
+          <i class="fa fa-triangle-exclamation" style="color:${SEVERITY_COLOR[inc.severity]}"></i> ${inc.type}
+        </p>
+        <p style="color:#94A3B8;font-size:11px;margin-bottom:6px;">📍 ${inc.loc}</p>
+        <p style="color:#CBD5E1;font-size:12px;margin-bottom:8px;">${inc.desc}</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span style="font-size:10px;background:#1E293B;border:1px solid #334155;border-radius:999px;padding:2px 8px;color:${SEVERITY_COLOR[inc.severity]}">
+            ● ${SEVERITY_LABEL[inc.severity].toUpperCase()} — Score: ${inc.urgency}
+          </span>
+          <button onclick="dispatchUnit(${inc.id})"
+            style="background:#DC2626;color:white;font-size:11px;font-weight:700;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;">
+            Dispatch Unit
+          </button>
+        </div>
+      </div>
+    `, { maxWidth: 280 });
+    markerGroup.addLayer(marker);
+  });
+}
+
+renderMapMarkers('all');
+
+/* Dispatch unit action from map popup */
+function dispatchUnit(incidentId) {
+  const inc = incidentDB.find(i => i.id === incidentId);
+  if (!inc) return;
+  const teams = rescueTeams.filter(t => t.status === 'Standby');
+  if (teams.length === 0) { alert('No standby teams available!'); return; }
+  const team = teams[0];
+  team.status = 'Deployed';
+  team.location = inc.loc;
+  team.type = inc.type;
+  renderTeamTable();
+  addFeedItem(`🚁 ${team.name} dispatched to ${inc.loc} — ${inc.type} response`, 'critical');
+  map.closePopup();
+}
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 4 — AI CRISIS INTELLIGENCE ENGINE
+   ══════════════════════════════════════════════════ */
+
+/* Keyword → score bonus map */
+const AI_KEYWORDS = {
+  'terjebak':     { score: 15, label: 'Orang Terjebak' },
+  'balita':       { score: 20, label: 'Balita / Anak' },
+  'lansia':       { score: 18, label: 'Lansia' },
+  'darah':        { score: 22, label: 'Luka Berdarah' },
+  'tenggelam':    { score: 25, label: 'Tenggelam' },
+  'runtuh':       { score: 18, label: 'Bangunan Runtuh' },
+  'korban':       { score: 12, label: 'Ada Korban' },
+  'medis':        { score: 15, label: 'Butuh Medis' },
+  'longsor':      { score: 10, label: 'Tanah Longsor' },
+  'banjir':       { score: 10, label: 'Banjir' },
+  'gempa':        { score: 12, label: 'Gempa' },
+  'api':          { score: 14, label: 'Kebakaran' },
+  'kebakaran':    { score: 14, label: 'Kebakaran' },
+  'asap':         { score: 8,  label: 'Asap Tebal' },
+  'perahu':       { score: 5,  label: 'Butuh Perahu' },
+  'makanan':      { score: 6,  label: 'Kekurangan Pangan' },
+  'air':          { score: 6,  label: 'Butuh Air Bersih' },
+};
+
+/* Logistics tag rules */
+const LOGISTICS_RULES = [
+  { keywords: ['tenggelam','perahu','banjir','banjir bandang'], tag: 'Perahu Karet',     icon: 'fa-water' },
+  { keywords: ['darah','luka','medis','korban','balita'],       tag: 'P3K & Obat',       icon: 'fa-kit-medical' },
+  { keywords: ['balita','makanan','bayi'],                      tag: 'Makanan Bayi',     icon: 'fa-baby' },
+  { keywords: ['puting beliung','longsor','runtuh','gempa'],    tag: 'Tenda Darurat',    icon: 'fa-tent' },
+  { keywords: ['lansia','lansia','balita'],                     tag: 'Evakuasi Prioritas', icon: 'fa-wheelchair' },
+  { keywords: ['air','kering','bersih'],                        tag: 'Air Bersih',       icon: 'fa-droplet' },
+  { keywords: ['kebakaran','api','asap'],                       tag: 'Masker & APAR',    icon: 'fa-fire-extinguisher' },
+];
+
+function runAIAnalysis(text, baseUrgency) {
+  const lower = text.toLowerCase();
+  let score = parseInt(baseUrgency) || 10;
+  const detectedKW = [];
+  const logisticSet = new Set();
+
+  /* Keyword scanning */
+  for (const [kw, data] of Object.entries(AI_KEYWORDS)) {
+    if (lower.includes(kw)) {
+      score += data.score;
+      detectedKW.push(data.label);
+    }
+  }
+
+  /* Logistics matching */
+  LOGISTICS_RULES.forEach(rule => {
+    rule.keywords.forEach(kw => {
+      if (lower.includes(kw)) logisticSet.add(JSON.stringify({ tag: rule.tag, icon: rule.icon }));
+    });
+  });
+
+  score = Math.min(100, score);
+
+  /* Risk category */
+  let category, catColor;
+  if (score >= 80)      { category = 'CRITICAL EMERGENCY'; catColor = '#DC2626'; }
+  else if (score >= 60) { category = 'HIGH RISK';          catColor = '#F59E0B'; }
+  else if (score >= 35) { category = 'MODERATE RISK';      catColor = '#3B82F6'; }
+  else                  { category = 'LOW RISK';            catColor = '#22C55E'; }
+
+  const summary = detectedKW.length > 0
+    ? `Terdeteksi ${detectedKW.length} indikator bahaya. Prioritaskan respons segera untuk lokasi ini.`
+    : 'Tidak ada kata kunci kritis terdeteksi. Pemantauan standar disarankan.';
+
+  /* Update DOM */
+  const scoreEl = document.getElementById('ai-score');
+  scoreEl.textContent = score;
+  scoreEl.style.color = catColor;
+  document.getElementById('ai-category').textContent = category;
+  document.getElementById('ai-category').style.color = catColor;
+  document.getElementById('ai-summary').textContent = summary;
+
+  /* Keywords */
+  const kwEl = document.getElementById('ai-keywords');
+  if (detectedKW.length > 0) {
+    kwEl.innerHTML = detectedKW.map(k =>
+      `<span class="bg-red-900/40 border border-red-700/40 text-red-300 text-[10px] font-semibold rounded-full px-2 py-0.5">${k}</span>`
+    ).join('');
+  } else {
+    kwEl.innerHTML = '<span class="text-slate-600 text-xs italic">No critical keywords</span>';
+  }
+
+  /* Logistics tags */
+  const tagEl = document.getElementById('ai-tags');
+  const logistics = [...logisticSet].map(s => JSON.parse(s));
+  if (logistics.length > 0) {
+    tagEl.innerHTML = logistics.map(l =>
+      `<span class="bg-sky-900/40 border border-sky-700/40 text-sky-300 text-xs font-semibold rounded-lg px-2.5 py-1 flex items-center gap-1.5">
+         <i class="fa-solid ${l.icon} text-sky-400"></i>${l.tag}
+       </span>`
+    ).join('');
+  } else {
+    tagEl.innerHTML = '<span class="text-slate-600 text-xs italic">No logistics required</span>';
+  }
+}
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 5 — EMERGENCY REPORT FORM HANDLER
+   ══════════════════════════════════════════════════ */
+function submitReport(e) {
+  e.preventDefault();
+  const name     = document.getElementById('f-name').value.trim();
+  const phone    = document.getElementById('f-phone').value.trim();
+  const location = document.getElementById('f-location').value;
+  const type     = document.getElementById('f-type').value;
+  const urgency  = document.getElementById('f-urgency').value;
+  const desc     = document.getElementById('f-desc').value.trim();
+
+  if (!name || !location || !type) {
+    alert('Harap isi Nama, Lokasi, dan Jenis Bencana.');
+    return;
+  }
+
+  /* Run AI analysis */
+  runAIAnalysis(desc + ' ' + type + ' ' + location, urgency);
+
+  /* Add to live feed */
+  const severity = urgency >= 75 ? 'critical' : urgency >= 50 ? 'high' : 'moderate';
+  addFeedItem(`📋 Laporan baru dari ${name}: [${type}] di ${location} — Urgensi ${urgency}`, severity);
+
+  /* Update KPI */
+  const kpiEl = document.getElementById('kpi-total');
+  kpiEl.textContent = parseInt(kpiEl.textContent) + 1;
+
+  /* Reset form */
+  document.getElementById('report-form').reset();
+  document.getElementById('slider-val').textContent = '50';
+}
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 6 — LIVE INCIDENT FEED
+   ══════════════════════════════════════════════════ */
+let feedCount = 0;
+
+const FEED_SEVERITY_STYLE = {
+  critical: { dot: 'bg-red-500',   label: 'CRITICAL', labelClass: 'badge-critical' },
+  high:     { dot: 'bg-amber-400', label: 'HIGH',     labelClass: 'badge-enroute'  },
+  moderate: { dot: 'bg-blue-500',  label: 'MODERATE', labelClass: 'badge-deployed' },
+};
+
+function addFeedItem(message, severity) {
+  feedCount++;
+  const s = FEED_SEVERITY_STYLE[severity] || FEED_SEVERITY_STYLE.moderate;
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-GB', { hour12: false });
+
+  const item = document.createElement('div');
+  item.className = 'feed-item bg-slate-900/60 border border-slate-700/40 rounded-lg p-2.5 flex items-start gap-2.5';
+  item.innerHTML = `
+    <span class="w-2 h-2 rounded-full ${s.dot} mt-1.5 flex-shrink-0 ${severity==='critical'?'pulse-red':''}"></span>
+    <div class="flex-1 min-w-0">
+      <p class="text-slate-200 text-xs leading-relaxed">${message}</p>
+      <p class="text-slate-600 text-[10px] mt-0.5 font-mono">${timeStr}</p>
+    </div>
+    <span class="text-[9px] font-bold rounded-full px-2 py-0.5 flex-shrink-0 ${s.labelClass}">${s.label}</span>
+  `;
+
+  const feed = document.getElementById('incident-feed');
+  feed.insertBefore(item, feed.firstChild);
+  document.getElementById('feed-count').textContent = `${feedCount} events`;
+  updateLiveCount();
+}
+
+/* Simulate auto-incoming reports */
+const AUTO_REPORTS = [
+  { msg: '🆘 Laporan masuk: Banjir bandang di Cianjur, 12 keluarga terjebak di lantai 2', sev: 'critical' },
+  { msg: '⚠️ Update: Tanah longsor di Cipanas menutup jalur evakuasi utama', sev: 'high' },
+  { msg: '📡 Sensor BMKG: Gempa M4.8 terdeteksi — Epicenter Cianjur Selatan', sev: 'high' },
+  { msg: '✅ TIM SAR-03 berhasil evakuasi 8 korban dari Desa Sukatani', sev: 'moderate' },
+  { msg: '🚁 Helikopter BASARNAS mendarat di LZ-Alpha, distribusi logistik dimulai', sev: 'moderate' },
+  { msg: '🆘 Laporan darurat: Lansia dan balita terjebak di atap rumah — Karawang Timur', sev: 'critical' },
+  { msg: '📦 Logistik: 500 paket makanan siap distribusi dari Gudang Depok', sev: 'moderate' },
+  { msg: '⚡ Listrik padam di 3 kecamatan — BNPB koordinasi PLN untuk pemulihan', sev: 'high' },
+  { msg: '🏥 RSUD Cianjur aktifkan IGD darurat. Kapasitas tersisa 40%', sev: 'high' },
+  { msg: '🚨 Peringatan: Ketinggian air Sungai Cimanuk naik 3m — siaga banjir', sev: 'critical' },
+];
+
+let autoReportIdx = 0;
+function triggerAutoFeed() {
+  const r = AUTO_REPORTS[autoReportIdx % AUTO_REPORTS.length];
+  addFeedItem(r.msg, r.sev);
+  autoReportIdx++;
+}
+
+/* First items immediately, then random intervals */
+triggerAutoFeed();
+setTimeout(triggerAutoFeed, 2500);
+setTimeout(triggerAutoFeed, 4800);
+setInterval(() => {
+  if (Math.random() > 0.3) triggerAutoFeed();
+}, 5000 + Math.random() * 4000);
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 7 — RESCUE TEAM DEPLOYMENT TABLE
+   ══════════════════════════════════════════════════ */
+const rescueTeams = [
+  { id: 1, name: 'TIM SAR-01 Jakarta',       location: 'Jakarta Utara, DKI Jakarta',   type: 'Banjir',         personnel: 12, status: 'Deployed'  },
+  { id: 2, name: 'BPBD Jabar Team B',         location: 'Bandung, Jawa Barat',          type: 'Tanah Longsor',  personnel: 8,  status: 'En Route'  },
+  { id: 3, name: 'BASARNAS Unit Sulawesi',    location: 'Palu, Sulawesi Tengah',        type: 'Gempa Bumi',     personnel: 15, status: 'Deployed'  },
+  { id: 4, name: 'TIM SAR-04 Makassar',       location: 'Makassar, Sulawesi Selatan',   type: 'Banjir Bandang', personnel: 10, status: 'Deployed'  },
+  { id: 5, name: 'BPBD NTB Delta Force',      location: 'Mataram, NTB',                 type: 'Banjir',         personnel: 7,  status: 'Standby'   },
+  { id: 6, name: 'TIM Medis TNI-AD Papua',    location: 'Jayapura, Papua',              type: 'Kebakaran Hutan',personnel: 20, status: 'En Route'  },
+  { id: 7, name: 'Relawan PMI Jateng',        location: 'Semarang, Jawa Tengah',        type: 'Puting Beliung', personnel: 6,  status: 'Standby'   },
+];
+
+const STATUS_BADGE = {
+  'Deployed':  'badge-deployed',
+  'En Route':  'badge-enroute',
+  'Standby':   'badge-standby',
+};
+
+function renderTeamTable() {
+  const tbody = document.getElementById('team-table-body');
+  tbody.innerHTML = rescueTeams.map(t => `
+    <tr class="border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors">
+      <td class="py-3 pr-4">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-users text-amber-400 text-xs"></i>
+          <span class="text-slate-200 text-xs font-semibold">${t.name}</span>
+        </div>
+      </td>
+      <td class="py-3 pr-4">
+        <span class="text-slate-400 text-xs"><i class="fa-solid fa-location-dot text-slate-600 mr-1"></i>${t.location}</span>
+      </td>
+      <td class="py-3 pr-4">
+        <span class="text-sky-400 text-xs">${t.type}</span>
+      </td>
+      <td class="py-3 pr-4">
+        <span class="text-slate-300 text-xs font-mono">${t.personnel} pax</span>
+      </td>
+      <td class="py-3 pr-4">
+        <span class="text-[11px] font-bold rounded-full px-2.5 py-1 ${STATUS_BADGE[t.status] || 'badge-standby'}">${t.status}</span>
+      </td>
+      <td class="py-3">
+        <div class="flex gap-1.5">
+          <button onclick="updateTeamStatus(${t.id},'Deployed')"
+            class="text-[10px] font-bold bg-red-900/40 hover:bg-red-700/50 border border-red-700/40 text-red-300 rounded px-2 py-1 transition-colors">
+            Deploy
+          </button>
+          <button onclick="updateTeamStatus(${t.id},'Standby')"
+            class="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded px-2 py-1 transition-colors">
+            Standby
+          </button>
+          <button onclick="contactTeam(${t.id})"
+            class="text-[10px] font-bold bg-sky-900/40 hover:bg-sky-700/50 border border-sky-700/40 text-sky-300 rounded px-2 py-1 transition-colors">
+            <i class="fa-solid fa-radio"></i>
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function updateTeamStatus(id, status) {
+  const t = rescueTeams.find(t => t.id === id);
+  if (!t) return;
+  t.status = status;
+  renderTeamTable();
+  addFeedItem(`🔄 ${t.name} status berubah ke: ${status}`, status === 'Deployed' ? 'critical' : 'moderate');
+}
+
+function contactTeam(id) {
+  const t = rescueTeams.find(t => t.id === id);
+  if (t) addFeedItem(`📻 Komunikasi radio ke ${t.name} — saluran prioritas aktif`, 'moderate');
+}
+
+renderTeamTable();
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 8 — ADMIN CONTROLS
+   ══════════════════════════════════════════════════ */
+
+/* Filter incidents by severity on map */
+function filterBySeverity(value) {
+  currentFilter = value;
+  renderMapMarkers(value);
+}
+
+/* Trigger evacuation alert modal */
+function triggerEvacuationAlert() {
+  const modal = document.getElementById('evacuation-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  addFeedItem('🚨 EVACUATION ALERT triggered by command center operator', 'critical');
+  /* Update KPI critical count */
+  const critEl = document.getElementById('kpi-critical');
+  critEl.textContent = parseInt(critEl.textContent) + 1;
+}
+
+/* Export incident data to CSV */
+function exportCSV() {
+  const headers = ['ID', 'Type', 'Location', 'Latitude', 'Longitude', 'Severity', 'Urgency Score', 'Description', 'Time'];
+  const rows = incidentDB.map(i => [
+    i.id, `"${i.type}"`, `"${i.loc}"`, i.lat, i.lng, i.severity, i.urgency, `"${i.desc.replace(/"/g, "'")}"`, i.time
+  ].join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `rescuai_incidents_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addFeedItem('📊 Incident data exported to CSV by operator', 'moderate');
+}
+
+/* Live incident count badge */
+function updateLiveCount() {
+  const active = incidentDB.filter(i => currentFilter === 'all' || i.severity === currentFilter).length;
+  document.getElementById('incident-live-count').textContent = `${active} Active Incidents`;
+}
+
+updateLiveCount();
+
+
+/* ══════════════════════════════════════════════════
+   SECTION 9 — KPI LIVE ANIMATION (simulate drift)
+   ══════════════════════════════════════════════════ */
+setInterval(() => {
+  /* Slightly increment logistics queue to simulate live data */
+  const el = document.getElementById('kpi-logistics');
+  const val = parseInt(el.textContent);
+  if (Math.random() > 0.6) el.textContent = val + 1;
+
+  /* Occasionally simulate SAR team count change */
+  const sarEl = document.getElementById('kpi-sar');
+  const sarVal = parseInt(sarEl.textContent);
+  if (Math.random() > 0.8) sarEl.textContent = Math.max(10, sarVal + (Math.random() > 0.5 ? 1 : -1));
+}, 8000);
+
+</script>
+</body>
+</html>
